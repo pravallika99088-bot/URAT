@@ -1,0 +1,98 @@
+odule uart_tx #(
+    parameter CLK_FREQ = 50000000, // 50 MHz default clock
+    parameter BAUD_RATE = 115200   // 115200 Standard Baud Rate
+)(
+    input  wire       clk,
+    input  wire       rst_n,
+    input  wire [7:0] tx_data,
+    input  wire       tx_start,
+    output reg        tx_serial,
+    output reg        tx_busy,
+    output reg        tx_done
+);
+
+    localparam CLK_PER_BIT = CLK_FREQ / BAUD_RATE;
+
+    localparam STATE_IDLE  = 2'b00;
+    localparam STATE_START = 2'b01;
+    localparam STATE_DATA  = 2'b10;
+    localparam STATE_STOP  = 2'b11;
+
+    reg [1:0]  state, next_state;
+    reg [15:0] clk_cnt;
+    reg [2:0]  bit_index;
+    reg [7:0]  tx_data_reg;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            state       <= STATE_IDLE;
+            clk_cnt     <= 0;
+            bit_index   <= 0;
+            tx_data_reg <= 0;
+            tx_serial   <= 1'b1;
+            tx_busy     <= 1'b0;
+            tx_done     <= 1'b0;
+        end else begin
+            state <= next_state;
+            case (state)
+                STATE_IDLE: begin
+                    tx_serial <= 1'b1;
+                    tx_done   <= 1'b0;
+                    clk_cnt   <= 0;
+                    bit_index <= 0;
+                    if (tx_start) begin
+                        tx_data_reg <= tx_data;
+                        tx_busy     <= 1'b1;
+                    end else begin
+                        tx_busy     <= 1'b0;
+                    end
+                end
+
+                STATE_START: begin
+                    tx_serial <= 1'b0; // Start Bit (Low)
+                    if (clk_cnt < CLK_PER_BIT - 1) begin
+                        clk_cnt <= clk_cnt + 1;
+                    end else begin
+                        clk_cnt <= 0;
+                    end
+                end
+
+                STATE_DATA: begin
+                    tx_serial <= tx_data_reg[bit_index];
+                    if (clk_cnt < CLK_PER_BIT - 1) begin
+                        clk_cnt <= clk_cnt + 1;
+                    end else begin
+                        clk_cnt <= 0;
+                        if (bit_index < 7) begin
+                            bit_index <= bit_index + 1;
+                        end else begin
+                            bit_index <= 0;
+                        end
+                    end
+                end
+
+                STATE_STOP: begin
+                    tx_serial <= 1'b1; // Stop Bit (High)
+                    if (clk_cnt < CLK_PER_BIT - 1) begin
+                        clk_cnt <= clk_cnt + 1;
+                    end else begin
+                        clk_cnt <= 0;
+                        tx_done <= 1'b1;
+                        tx_busy <= 1'b0;
+                    end
+                end
+            endcase
+        end
+    end
+
+    always @(*) begin
+        next_state = state;
+        case (state)
+            STATE_IDLE:  if (tx_start) next_state = STATE_START;
+            STATE_START: if (clk_cnt == CLK_PER_BIT - 1) next_state = STATE_DATA;
+            STATE_DATA:  if (clk_cnt == CLK_PER_BIT - 1 && bit_index == 7) next_state = STATE_STOP;
+            STATE_STOP:  if (clk_cnt == CLK_PER_BIT - 1) next_state = STATE_IDLE;
+            default:     next_state = STATE_IDLE;
+        endcase
+    end
+endmodule

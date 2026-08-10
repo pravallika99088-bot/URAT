@@ -1,0 +1,8 @@
+bin/bash
+iverilog \ 
+../rtl/urat-tx.v \
+../rtl/urat-rx.v \
+../testbench/urat_tb.v \
+-o urat_sim
+vvp urat_sim
+gtkwave waveform.vcd
